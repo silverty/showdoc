@@ -10,7 +10,13 @@ class UserController extends BaseController {
         $password = I("password");
         $confirm_password = I("confirm_password");
         $v_code = I("v_code");
+        $register_open = D("Options")->get("register_open" ) ;
+        if ($register_open === '0') {
+           $this->sendError(10101,"管理员已关闭注册");
+           return ;
+        }
         if (C('CloseVerify') || $v_code && $v_code == session('v_code') ) {
+        session('v_code',null) ;
         if ( $password != '' && $password == $confirm_password) {
 
             if ( ! D("User")->isExist($username) ) {
@@ -21,8 +27,7 @@ class UserController extends BaseController {
                     unset($ret['password']);
                     session("login_user" , $ret );
                     $token = D("UserToken")->createToken($ret['uid']);
-                    cookie('cookie_token',$token,60*60*24*90);//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
-                    session('v_code',null) ;
+                    cookie('cookie_token',$token,array('expire'=>60*60*24*90,'httponly'=>'httponly'));//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
                   $this->sendResult(array()); 
 
                 }else{
@@ -53,14 +58,18 @@ class UserController extends BaseController {
                 return;
             }
         }
-
+        session('v_code',null) ;
         $ret = D("User")->checkLogin($username,$password);
+        //如果失败则尝试ldap登录
+        if (!$ret) {
+            $ret = D("User")->checkLdapLogin($username,$password);
+        }
         if ($ret) {
           unset($ret['password']);
           session("login_user" , $ret );
           D("User")->setLastTime($ret['uid']);
           $token = D("UserToken")->createToken($ret['uid']);
-          cookie('cookie_token',$token,60*60*24*90);//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
+          cookie('cookie_token',$token,array('expire'=>60*60*24*90,'httponly'=>'httponly'));//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
           $this->sendResult(array());               
         }else{
             D("VerifyCode")->_ins_times($key);//输错密码则设置输错次数
@@ -80,8 +89,24 @@ class UserController extends BaseController {
     public function info(){
         $login_user = $this->checkLogin();
         $uid = $login_user['uid'] ;
-        $field = "uid,username,email,name,avatar,avatar_small" ;
+        $field = "uid,username,email,name,avatar,avatar_small,groupid" ;
         $info = D("User")->where(" uid = '$uid' ")->field($field)->find();
+        $this->sendResult($info); 
+    }
+
+    //获取所有用户名
+    public function allUser(){
+        $login_user = $this->checkLogin();
+        $uid = $login_user['uid'] ;
+        $username = I("username");
+        $field = "username as value" ;
+        $username = \SQLite3::escapeString($username) ;
+        if ($username) {
+            $where = " username like '%{$username}%'" ;
+        }else{
+            $where = ' 1 = 1 ';
+        }
+        $info = D("User")->where($where)->field($field)->select();
         $this->sendResult($info); 
     }
 
@@ -114,5 +139,18 @@ class UserController extends BaseController {
         session(null);
         $this->sendResult(array());
     }
+
+
+    public function updateInfo(){
+        $user = $this->checkLogin();
+        $uid = $user['uid'];
+        $name = I("name");
+
+        D("User")->where(" uid = '$uid' ")->save(array("name"=>$name));
+        $this->sendResult(array());
+
+    }
+
+
 
 }

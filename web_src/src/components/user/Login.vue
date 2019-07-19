@@ -4,7 +4,7 @@
 
     <el-container>
           <el-card class="center-card">
-            <el-form  status-icon  label-width="0px" class="demo-ruleForm">
+            <el-form  status-icon  label-width="0px" class="demo-ruleForm" @keyup.enter.native="onSubmit">
               <h2>{{$t("login")}}</h2>
               <el-form-item label="" >
                 <el-input type="text" auto-complete="off" :placeholder="$t('username_description')" v-model="username"></el-input>
@@ -52,12 +52,14 @@ export default {
       password: '',
       v_code: '',
       v_code_img:DocConfig.server+'/api/common/verify',
-      show_v_code:false
+      show_v_code:false,
+      is_show_alert:false
     }
 
   },
   methods: {
       onSubmit() {
+          if (this.is_show_alert) { return ;};
           //this.$message.success(this.username);
           var that = this ;
           var url = DocConfig.server+'/api/user/login';
@@ -79,7 +81,13 @@ export default {
                   that.show_v_code = true ;
                   that.change_v_code_img() ;
                 };
-                that.$alert(response.data.error_message);
+                that.is_show_alert = true ;
+                that.$alert(response.data.error_message,{callback:function(){
+                 setTimeout(function(){
+                    that.is_show_alert = false;
+                 },500);
+                 
+                }});
               }
               
             });
@@ -87,11 +95,27 @@ export default {
       change_v_code_img(){
         var rand = '&rand='+Math.random();
         this.v_code_img += rand ;
+      },
+      script_cron(){
+        var url = DocConfig.server+'/api/ScriptCron/run';
+        this.axios.get(url);
       }
+
   },
   mounted() {
+    var that = this ;
     /*给body添加类，设置背景色*/
     document.getElementsByTagName("body")[0].className="grey-bg";
+    this.get_user_info(function(response){
+      if (response.data.error_code === 0 ) {
+        let redirect = decodeURIComponent(that.$route.query.redirect || '/item/index');
+        that.$router.replace({
+          path: redirect
+        });
+      }
+    });
+
+    this.script_cron();
   },
   beforeDestroy(){
     /*去掉添加的背景色*/

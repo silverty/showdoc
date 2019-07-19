@@ -7,7 +7,7 @@ class ItemController extends BaseController {
     //单个项目信息
     public function info(){
         $this->checkLogin(false);
-        $item_id = I("item_id");
+        $item_id = I("item_id/s");
         $item_domain = I("item_domain/s");
         $current_page_id = I("page_id/d");
         if (! is_numeric($item_id)) {
@@ -28,8 +28,8 @@ class ItemController extends BaseController {
             return ;
         } 
 
-        $item = D("Item")->where("item_id = '$item_id' ")->find();
-        if (!$item) {
+        $item = D("Item")->where("item_id = '%d' ",array($item_id))->find();
+        if (!$item || $item['is_del'] == 1) {
             sleep(1);
             $this->sendError(10101,'项目不存在或者已删除');
             return false;
@@ -55,36 +55,17 @@ class ItemController extends BaseController {
         $login_user = session("login_user");
         $uid = $login_user['uid'] ? $login_user['uid'] : 0 ;
         $is_login =   $uid > 0 ? true :false;
-            
+        $menu = array(
+            "pages" =>array(),
+            "catalogs" =>array(),
+            );
         //是否有搜索词
         if ($keyword) {
             $keyword = \SQLite3::escapeString($keyword) ;
-            $pages = D("Page")->where("item_id = '$item_id' and ( page_title like '%{$keyword}%' or page_content like '%{$keyword}%' ) ")->order(" `s_number` asc  ")->field("page_id,author_uid,cat_id,page_title,addtime")->select();
-        
+            $pages = D("Page")->where("item_id = '$item_id' and is_del = 0  and ( page_title like '%{$keyword}%' or page_content like '%{$keyword}%' ) ")->order(" `s_number` asc  ")->field("page_id,author_uid,cat_id,page_title,addtime")->select();
+            $menu['pages'] = $pages ? $pages : array();
         }else{
-            //获取所有父目录id为0的页面
-            $pages = D("Page")->where("cat_id = '0' and item_id = '$item_id' ")->order(" `s_number` asc  ")->field("page_id,author_uid,cat_id,page_title,addtime")->select();
-            //获取所有二级目录
-            $catalogs = D("Catalog")->where("item_id = '$item_id' and level = 2  ")->order(" `s_number` asc  ")->select();
-            if ($catalogs) {
-                foreach ($catalogs as $key => &$catalog) {
-                    //该二级目录下的所有子页面
-                    $temp = D("Page")->where("cat_id = '$catalog[cat_id]' ")->order(" `s_number` asc  ")->field("page_id,author_uid,cat_id,page_title,addtime")->select();
-                    $catalog['pages'] = $temp ? $temp: array();
-
-                    //该二级目录下的所有子目录
-                    $temp = D("catalog")->where("parent_cat_id = '$catalog[cat_id]' ")->order(" `s_number` asc  ")->select();
-                    $catalog['catalogs'] = $temp ? $temp: array();
-                    if($catalog['catalogs']){
-                        //获取所有三级目录的子页面
-                        foreach ($catalog['catalogs'] as $key3 => &$catalog3) {
-                            //该二级目录下的所有子页面
-                            $temp = D("Page")->where("cat_id = '$catalog3[cat_id]' ")->order(" `s_number` asc  ")->field("page_id,author_uid,cat_id,page_title,addtime")->select();
-                            $catalog3['pages'] = $temp ? $temp: array();
-                        }                        
-                    }               
-                }
-            }
+            $menu = D("Item")->getMemu($item_id) ;
         }
 
         $domain = $item['item_domain'] ? $item['item_domain'] : $item['item_id'];
@@ -94,11 +75,19 @@ class ItemController extends BaseController {
 
         $ItemCreator = $this->checkItemCreator($uid , $item_id);
 
-        //如果带了默认展开的页面id，则获取该页面所在的二级目录和三级目录
+        //如果带了默认展开的页面id，则获取该页面所在的二级目录/三级目录/四级目录
         if ($default_page_id) {
             $page = D("Page")->where(" page_id = '$default_page_id' ")->find();
             if ($page) {
-                $default_cat_id3 = $page['cat_id'] ;
+                $default_cat_id4 = $page['cat_id'] ;
+                $cat1 = D("Catalog")->where(" cat_id = '$default_cat_id4' and parent_cat_id > 0  ")->find();
+                if ($cat1) {
+                    $default_cat_id3 = $cat1['parent_cat_id'];
+                }else{
+                    $default_cat_id3 = $default_cat_id4;
+                    $default_cat_id4 = 0 ;
+                }
+
                 $cat2 = D("Catalog")->where(" cat_id = '$default_cat_id3' and parent_cat_id > 0  ")->find();
                 if ($cat2) {
                     $default_cat_id2 = $cat2['parent_cat_id'];
@@ -115,18 +104,17 @@ class ItemController extends BaseController {
         else{
             $help_url = "https://www.showdoc.cc/help";
         }
-        $menu =array(
-            "pages" => $pages ,
-            "catalogs" => $catalogs ,
-            ) ;
+
 
         $return = array(
             "item_id"=>$item_id ,
             "item_domain"=>$item['item_domain'] ,
             "is_archived"=>$item['is_archived'] ,
+            "item_name"=>$item['item_name'] ,
             "default_page_id"=>(string)$default_page_id ,
             "default_cat_id2"=>$default_cat_id2 ,
             "default_cat_id3"=>$default_cat_id3 ,
+            "default_cat_id4"=>$default_cat_id4 ,
             "unread_count"=>$unread_count ,
             "item_type"=>1 ,
             "menu"=>$menu ,
@@ -163,6 +151,7 @@ class ItemController extends BaseController {
             "item_id"=>$item_id ,
             "item_domain"=>$item['item_domain'] ,
             "is_archived"=>$item['is_archived'] ,
+            "item_name"=>$item['item_name'] ,
             "current_page_id"=>$current_page_id ,
             "unread_count"=>$unread_count ,
             "item_type"=>2 ,
@@ -179,7 +168,35 @@ class ItemController extends BaseController {
     //我的项目列表
     public function myList(){
         $login_user = $this->checkLogin();        
-        $items  = D("Item")->field("item_id,item_name,last_update_time,item_description")->where("uid = '$login_user[uid]' or item_id in ( select item_id from ".C('DB_PREFIX')."item_member where uid = '$login_user[uid]' ) ")->order("item_id asc")->select();
+        $member_item_ids = array(-1) ; 
+        $item_members = D("ItemMember")->where("uid = '$login_user[uid]'")->select();
+        if ($item_members) {
+            foreach ($item_members as $key => $value) {
+                $member_item_ids[] = $value['item_id'] ;
+            }
+        }
+        $team_item_members = D("TeamItemMember")->where("member_uid = '$login_user[uid]'")->select();
+        if ($team_item_members) {
+            foreach ($team_item_members as $key => $value) {
+                $member_item_ids[] = $value['item_id'] ;
+            }
+        }
+        $items  = D("Item")->field("item_id,uid,item_name,item_domain,item_type,last_update_time,item_description,is_del")->where("uid = '$login_user[uid]' or item_id in ( ".implode(",", $member_item_ids)." ) ")->order("item_id asc")->select();
+        
+        
+        foreach ($items as $key => $value) {
+            if ($value['uid'] == $login_user['uid']) {
+               $items[$key]['creator'] = 1 ;
+            }else{
+               $items[$key]['creator'] = 0 ;
+            }
+            //如果项目已标识为删除
+            if ($value['is_del'] == 1) {
+                unset($items[$key]);
+            }
+
+        }
+        $items = array_values($items);
         //读取需要置顶的项目
         $top_items = D("ItemTop")->where("uid = '$login_user[uid]'")->select();
         if ($top_items) {
@@ -196,13 +213,41 @@ class ItemController extends BaseController {
                     array_unshift($items,$tmp) ;
                 }
             }
-
-            $items = array_values($items);
         }
 
-        $items = $items ? $items : array();
+        //读取项目顺序
+        $item_sort = D("ItemSort")->where("uid = '$login_user[uid]'")->find();
+        if ($item_sort) {
+            $item_sort_data = json_decode(htmlspecialchars_decode($item_sort['item_sort_data']) , true) ;
+            //var_dump($item_sort_data);
+            foreach ($items as $key => &$value) {
+                //如果item_id有设置了序号，则赋值序号。没有则默认填上0
+                if ($item_sort_data[$value['item_id']]) {
+                    $value['s_number'] = $item_sort_data[$value['item_id']] ;
+                }else{
+                    $value['s_number'] = 0 ;
+                }
+            }
+            $items = $this->_sort_by_key($items , 's_number' ) ;
+        }
+
+
+        $items = $items ? array_values($items) : array();
         $this->sendResult($items);
 
+    }
+
+    private function _sort_by_key($array , $mykey){
+        for ($i=0; $i < count($array) ; $i++) { 
+            for ($j = $i + 1 ; $j < count($array) ; $j++) {
+                if ($array[$i][$mykey] > $array[$j][$mykey] ) {
+                    $tmp = $array[$i] ;
+                    $array[$i] = $array[$j] ;
+                    $array[$j] = $tmp ;
+                }
+            }
+        }
+        return $array;
     }
 
     //项目详情
@@ -321,11 +366,7 @@ class ItemController extends BaseController {
         }
 
 
-        D("Page")->where("item_id = '$item_id' ")->delete();
-        D("Catalog")->where("item_id = '$item_id' ")->delete();
-        D("PageHistory")->where("item_id = '$item_id' ")->delete();
-        D("ItemMember")->where("item_id = '$item_id' ")->delete();
-        $return = D("Item")->where("item_id = '$item_id' ")->delete();
+        $return = D("Item")->soft_delete_item($item_id);
 
         if (!$return) {
             $this->sendError(10101);
@@ -406,100 +447,8 @@ class ItemController extends BaseController {
     }
 
     public function updateByApi(){
-        $api_key = I("api_key");
-        $api_token = I("api_token");
-        $cat_name = I("cat_name");
-        $cat_name_sub = I("cat_name_sub");
-        $page_title = I("page_title");
-        $page_content = I("page_content");
-        $s_number = I("s_number") ? I("s_number") : 99;
-
-        $ret = D("ItemToken")->getTokenByKey($api_key);
-        if ($ret && $ret['api_token'] == $api_token) {
-            $item_id = $ret['item_id'] ;
-            D("ItemToken")->setLastTime($item_id);
-        }else{
-            $this->sendError(10306);
-            return false;
-        }
-
-        //如果传送了二级目录
-        if ($cat_name) {
-            $cat_name_array = D("Catalog")->where(" item_id = '$item_id' and level = 2 and cat_name = '%s' ",array($cat_name))->find();
-            //如果不存在则新建
-            if (!$cat_name_array) {
-                $add_data = array(
-                    "cat_name" => $cat_name, 
-                    "item_id" => $item_id, 
-                    "addtime" => time(),
-                    "level" => 2 
-                    );
-                D("Catalog")->add($add_data);
-                $cat_name_array = D("Catalog")->where(" item_id = '$item_id' and level = 2 and cat_name = '%s' ",array($cat_name))->find();
-            }
-        }
-
-        //如果传送了三级目录
-        if ($cat_name_sub) {
-            $cat_name_sub_array = D("Catalog")->where(" item_id = '$item_id' and level = 3 and cat_name = '%s'  and parent_cat_id = '%s' ",array($cat_name_sub,$cat_name_array['cat_id']))->find();
-            //如果不存在则新建
-            if (!$cat_name_sub_array) {
-                $add_data = array(
-                    "cat_name" => $cat_name_sub, 
-                    "item_id" => $item_id, 
-                    "parent_cat_id" => $cat_name_array['cat_id'], 
-                    "addtime" => time(),
-                    "level" => 3 
-                    );
-                D("Catalog")->add($add_data);
-                $cat_name_sub_array = D("Catalog")->where(" item_id = '$item_id' and level = 3 and cat_name = '%s' and parent_cat_id = '%s' ",array($cat_name_sub,$cat_name_array['cat_id']))->find();
-            }
-        }
-
-        //目录id
-        $cat_id = 0 ;
-        if ($cat_name_array && $cat_name_array['cat_id'] > 0 ) {
-            $cat_id = $cat_name_array['cat_id'] ;
-        }
-
-        if ($cat_name_sub_array && $cat_name_sub_array['cat_id'] > 0 ) {
-            $cat_id = $cat_name_sub_array['cat_id'] ;
-        }
-
-        if ($page_content) {
-            $page_array = D("Page")->where(" item_id = '$item_id'  and cat_id = '$cat_id'  and page_title ='%s' ",array($page_title))->find();
-            //如果不存在则新建
-            if (!$page_array) {
-                $add_data = array(
-                    "author_username" => "from_api", 
-                    "item_id" => $item_id, 
-                    "cat_id" => $cat_id, 
-                    "page_title" => $page_title, 
-                    "page_content" => $page_content, 
-                    "s_number" => $s_number, 
-                    "addtime" => time(),
-                    );
-                $page_id = D("Page")->add($add_data);
-            }else{
-                $page_id = $page_array['page_id'] ;
-                $update_data = array(
-                    "author_username" => "from_api", 
-                    "item_id" => $item_id, 
-                    "cat_id" => $cat_id, 
-                    "page_title" => $page_title, 
-                    "page_content" => $page_content, 
-                    "s_number" => $s_number, 
-                    );
-                D("Page")->where(" page_id = '$page_id' ")->save($update_data);
-            }
-        }
-
-        if ($page_id) {
-            $ret = D("Page")->where(" page_id = '$page_id' ")->find();
-            $this->sendResult($ret);
-        }else{
-            $this->sendError(10101);
-        }
+        //转到Open控制器的updateItem方法
+        R('Open/updateItem');
     }
 
     //置顶项目
@@ -537,7 +486,7 @@ class ItemController extends BaseController {
                 return;
             }
         }
-
+        session('v_code',null) ;
         $item = D("Item")->where("item_id = '$item_id' ")->find();
         if ($item['password'] == $password) {
             session("visit_item_".$item_id , 1 );
@@ -636,5 +585,43 @@ class ItemController extends BaseController {
         
     }
 
+    //保存项目排序
+    public function sort(){
+        $login_user = $this->checkLogin();
 
+        $data = I("data");
+
+        D("ItemSort")->where(" uid = '$login_user[uid]' ")->delete();
+
+        $ret = D("ItemSort")->add(array("item_sort_data"=>$data,"uid"=>$login_user['uid'],"addtime"=>time()));
+
+        if ($ret) {
+            $this->sendResult(array());
+        }else{
+            $this->sendError(10101);
+        }
+    }
+
+    public function exitItem(){
+
+        $login_user = $this->checkLogin();
+
+        $item_id = I("item_id/d");
+
+        //判断，如果是处于团队中，则提示他去请团队管理者把ta从团队中删除
+        $row = D("TeamItemMember")->join(" left join team on team.id = team_item_member.team_id ")->where("item_id = '$item_id' and member_uid ='$login_user[uid]' ")->find();
+        if ($row) {
+           $this->sendError(10101,"你目前处于团队'{$row[team_name]}'中。你可以请'{$row[username]}'把你从团队成员中删除");
+           return ;
+        }
+        //如果不是处于团队中，仅仅是项目成员，则直接删除
+        $ret = D("ItemMember")->where("item_id = '$item_id' and uid ='$login_user[uid]' ")->delete();
+
+        if ($ret) {
+           $this->sendResult(array());
+        }else{
+            $this->sendError(10101);
+        }
+    }
+    
 }

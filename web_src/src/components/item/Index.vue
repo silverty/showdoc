@@ -11,6 +11,8 @@
           </div>
           <div class="header-btn-group pull-right">
             <el-button type="text"  @click="feedback">{{$t("feedback")}}</el-button>
+            <router-link to="/team/index" >&nbsp;&nbsp;&nbsp;{{$t('team_mamage')}}</router-link>
+            <router-link to="/admin/index" v-if="isAdmin">&nbsp;&nbsp;&nbsp;{{$t('background')}}</router-link>
             &nbsp;&nbsp;&nbsp;
             <el-dropdown @command="dropdown_callback">
               <span class="el-dropdown-link">
@@ -30,16 +32,28 @@
       </el-container>
 
       <el-container class="container-narrow">
-        <div class="container-thumbnails">
-          <ul class="thumbnails" id="item-list" v-if="itemList">
 
-              <li class=" text-center"  v-for="item in itemList">
+        <div class="container-thumbnails">
+
+          <div class="search-box-div" v-if="itemList.length > 9">
+              <el-input 
+                class="search-box"
+                v-model="keyword">
+                <i slot="prefix" class="el-input__icon el-icon-search"></i>
+              </el-input>
+          </div>
+
+          <ul class="thumbnails" id="item-list" v-if="itemListByKeyword">
+
+              <li class=" text-center"  v-for="item in itemListByKeyword"
+                 v-dragging="{ item: item, list: itemListByKeyword, group: 'item' }"
+              >
                 <router-link class="thumbnail item-thumbnail"  :to="'/' +  (item.item_domain ? item.item_domain:item.item_id )" title="">
-                  <span class="item-setting " @click.prevent="click_item_setting(item.item_id)" :title="$t('item_setting')" >
+                  <span class="item-setting " @click.prevent="click_item_setting(item.item_id)" :title="$t('item_setting')" v-if="item.creator" >
                     <i class="el-icon-setting"></i>
                   </span>
-                  <span class="item-top " @click.prevent="click_item_top(item.item_id,item.top)" :title="item.top ? $t('cancel_item_top'):$t('item_top')" >
-                    <i :class="item_top_class(item.top)"></i>
+                  <span class="item-exit" @click.prevent="click_item_exit(item.item_id)" :title="$t('item_exit')" v-if="! item.creator">
+                    <i class="el-icon-close"></i>
                   </span>
                   <p class="my-item">{{item.item_name}}</p>
                 </router-link>
@@ -83,7 +97,6 @@
   }
 
   .container-thumbnails{
-    margin: 0 auto;
     margin-top: 30px;
     max-width: 700px;
   }
@@ -138,17 +151,29 @@
     display: none;
   }
 
-  .item-top{
+  .item-exit{
     float:right;
     margin-right:5px;
     margin-top:5px;
-   display: none;
+    display: none;
   }
 
   .thumbnails li a i{
     color: #777;
     font-weight: bold;
     margin-left: 5px;
+  }
+
+  .item-thumbnail:hover .item-setting {
+    display: block;
+  }
+  .item-thumbnail:hover .item-exit {
+    display: block;
+  }
+
+  .search-box-div{
+    width: 190px;
+    margin-left: 60px;
   }
 
 </style>
@@ -161,8 +186,25 @@ export default {
   data() {
     return {
       currentDate: new Date(),
-      itemList:{}
+      itemList:{},
+      isAdmin:false,
+      keyword:''
     };
+  },
+  computed:{
+    itemListByKeyword:function(){
+      if (!this.keyword) {
+        return this.itemList ;
+      };
+      let itemListByKeyword = [] ;
+      for (var i = 0; i < this.itemList.length; i++) {
+        if (this.itemList[i]['item_name'].indexOf(this.keyword) > -1 ) {
+          itemListByKeyword.push(this.itemList[i]);
+        };
+        
+      };
+      return itemListByKeyword ;
+    }
   },
   methods:{
     get_item_list(){
@@ -177,7 +219,7 @@ export default {
               //that.$message.success("加载成功");
               var json = response.data.data ;
               that.itemList = json ;
-              that.bind_item_even();
+              //that.bind_item_even();
             }else{
               that.$alert(response.data.error_message);
             }
@@ -185,7 +227,17 @@ export default {
           });
     },
     feedback(){
-      window.open('https://github.com/star7th/showdoc/issues');
+      if (DocConfig.lang =='en') {
+        window.open('https://github.com/star7th/showdoc/issues');
+      }else{
+        var msg = "你正在使用免费开源版showdoc，如有问题或者建议，请到github提issue：";
+        msg += "<a href='https://github.com/star7th/showdoc/issues' target='_blank'>https://github.com/star7th/showdoc/issues</a><br>";
+        msg += "如果你觉得showdoc好用，不妨给开源项目点一个star。良好的关注度和参与度有助于开源项目的长远发展。";
+        this.$alert(msg, {
+            dangerouslyUseHTMLString: true
+        });
+      }
+
     },
     item_top_class(top){
       if (top) {
@@ -202,8 +254,8 @@ export default {
           //当鼠标放在项目上时将浮现设置和置顶图标
           $(".item-thumbnail").mouseover(function(){
             $(this).find(".item-setting").show();
-            $(this).find(".item-top").show();
-            $(this).find(".item-down").show();
+            //$(this).find(".item-top").show();
+            //$(this).find(".item-down").show();
           });
 
           //当鼠标离开项目上时将隐藏设置和置顶图标
@@ -219,26 +271,25 @@ export default {
     click_item_setting(item_id){
        this.$router.push({path:'/item/setting/'+item_id});
     },
-    click_item_top(item_id ,old_top){
-      if (old_top) {
-        var action = 'cancel'; 
-      }else{
-        var action = 'top'; 
-      }
+    click_item_exit(item_id){
       var that = this ;
-      var url = DocConfig.server+'/api/item/top';
-      var params = new URLSearchParams();
-      params.append('action', action);
-      params.append('item_id', item_id);
-      that.axios.post(url, params)
-        .then(function (response) {
-          if (response.data.error_code === 0 ) {
-            that.get_item_list();
-          }else{
-            that.$alert(response.data.error_message);
-          }
-          
-        });
+      this.$confirm(that.$t('confirm_exit_item'), ' ', {
+        confirmButtonText: that.$t('confirm'),
+        cancelButtonText: that.$t('cancel'),
+        type: 'warning'
+      }).then(() => {
+        var url = DocConfig.server+'/api/item/exitItem';
+        var params = new URLSearchParams();
+        params.append('item_id', item_id);
+        that.axios.post(url, params)
+          .then(function (response) {
+            if (response.data.error_code === 0 ) {
+              window.location.reload();
+            }else{
+              that.$alert(response.data.error_message);
+            }
+          });
+      })
     },
     logout(){
         var that = this ;
@@ -258,16 +309,67 @@ export default {
             
           });
     },
+    
+    user_info(){
+        var that = this ;
+        this.get_user_info(function(response){
+          if (response.data.error_code === 0 ) {
+            if (response.data.data.groupid == 1 ) {
+              that.isAdmin = true ;
+            };
+          }
+        });
 
+    },
     dropdown_callback(data){
       if (data) {
         data();
       };
     },
+
+
+    sort_item(data){
+      var that = this ;
+      var url = DocConfig.server+'/api/item/sort';
+      var params = new URLSearchParams();
+      params.append('data', JSON.stringify(data));
+      that.axios.post(url, params)
+        .then(function (response) {
+          if (response.data.error_code === 0 ) {
+            //that.get_item_list();
+            //window.location.reload();
+
+          }else{
+            that.$alert(response.data.error_message,'',{
+              callback:function(){
+                window.location.reload();
+              }
+            });
+            
+          }
+          
+        });
+    },
+    dragging(){
+      this.$dragging.$off('dragged',true);
+      this.$dragging.$on('dragged', ({ value }) => {
+        //console.log(value);
+        let data = {};
+        for (var i = 0; i < value['list'].length; i++) {
+          let key = value['list'][i]['item_id'] ;
+          data[key] = i + 1  ;
+        };
+        this.sort_item(data);
+      })
+    }
+
   },
   mounted () {
     this.get_item_list();
-    
+    this.user_info();
+    this.dragging();
+
+
   },
   beforeDestroy(){
     this.$message.closeAll();

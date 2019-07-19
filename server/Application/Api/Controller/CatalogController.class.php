@@ -12,25 +12,7 @@ class CatalogController extends BaseController {
             return ;
         }
         if ($item_id > 0 ) {
-            $ret = D("Catalog")->where(" item_id = '$item_id' ")->order(" 's_number', addtime asc  ")->select();
-        }
-        if ($ret) {
-           $this->sendResult($ret);
-        }else{
-            $this->sendResult(array());
-        }
-    }
-
-    //获取二级目录列表
-    public function secondCatList(){
-        $login_user = $this->checkLogin();
-        $item_id = I("item_id/d");
-        if (!$this->checkItemVisit($login_user['uid'] , $item_id)) {
-            $this->sendError(10103);
-            return ;
-        }
-        if ($item_id > 0 ) {
-            $ret = D("Catalog")->where(" item_id = '$item_id' and level =2  ")->order(" 's_number', addtime asc  ")->select();
+            $ret = D("Catalog")->getList($item_id);
         }
         if ($ret) {
            $this->sendResult($ret);
@@ -48,24 +30,7 @@ class CatalogController extends BaseController {
             return ;
         }
         if ($item_id > 0 ) {
-            $ret = D("Catalog")->where(" item_id = '$item_id' and level = 2  ")->order(" s_number, addtime asc  ")->select();
-            if (!empty($ret)) {
-                foreach ($ret as $key => &$value) {
-                    $value['addtime'] = date("Y-m-d H:i:s",$value['addtime']) ;
-                    $ret2 = D("Catalog")->where(" parent_cat_id = '$value[cat_id]' ")->order(" s_number, addtime asc  ")->select();
-                    if (empty($ret2)) {
-                        $value['sub'] = array() ;
-                    }else{
-                        foreach ($ret2 as $key2 => $value2) {
-                            $ret2[$key2]['addtime'] = date("Y-m-d H:i:s",$value2['addtime']) ;
-                        }
-                        $value['sub'] = $ret2 ;
-                    }
-
-
-                }
-            }
-
+            $ret = D("Catalog")->getList($item_id,true);
         }
         if ($ret) {
            $this->sendResult($ret);
@@ -74,11 +39,36 @@ class CatalogController extends BaseController {
         }
     }
 
+    //获取二级目录列表
+    public function secondCatList(){
+        $login_user = $this->checkLogin();
+        $item_id = I("item_id/d");
+        if (!$this->checkItemVisit($login_user['uid'] , $item_id)) {
+            $this->sendError(10103);
+            return ;
+        }
+        if ($item_id > 0 ) {
+            $ret = D("Catalog")->getListByLevel($item_id , 2);
+        }
+        if ($ret) {
+           $this->sendResult($ret);
+        }else{
+            $this->sendResult(array());
+        }
+    }
+
     //获取二级目录的子目录列表，即三级目录列表（如果存在的话）
     public function childCatList(){
+        $login_user = $this->checkLogin();
         $cat_id = I("cat_id/d");
         if ($cat_id > 0 ) {
-            $ret = D("Catalog")->where(" parent_cat_id = '$cat_id' ")->order(" 's_number', addtime asc  ")->select();
+            $row = D("Catalog")->where(" cat_id = '$cat_id' ")->find() ;
+            $item_id = $row['item_id'] ;
+            if (!$this->checkItemVisit($login_user['uid'] , $item_id)) {
+                $this->sendError(10103);
+                return ;
+            }
+            $ret =  D("Catalog")->getChlid($item_id , $cat_id);
         }
         if ($ret) {
            $this->sendResult($ret);
@@ -115,12 +105,24 @@ class CatalogController extends BaseController {
         $data['item_id'] = $item_id ;
         $data['parent_cat_id'] = $parent_cat_id ;
         if ($parent_cat_id > 0 ) {
-           $data['level'] = 3;
+            $row = D("Catalog")->where(" cat_id = '$parent_cat_id' ")->find() ;
+            $data['level'] = $row['level'] +1 ;
         }else{
             $data['level'] = 2;
         }
 
         if ($cat_id > 0 ) {
+            $cat = D("Catalog")->where(" cat_id = '$cat_id' ")->find();
+            $item_id = $cat['item_id']; 
+            if (!$this->checkItemPermn($login_user['uid'] , $item_id)) {
+                $this->sendError(10103);
+                return;
+            }
+            //如果一个目录已经是别的目录的父目录，那么它将无法再转为level4目录
+            if (D("Catalog")->where(" parent_cat_id = '$cat_id' ")->find() && $data['level'] == 4 ) {
+                $this->sendError(10101,"该目录含有子目录，不允许转为底层目录。");
+                return;
+            }
             
             $ret = D("Catalog")->where(" cat_id = '$cat_id' ")->save($data);
             $return = D("Catalog")->where(" cat_id = '$cat_id' ")->find();
@@ -153,16 +155,9 @@ class CatalogController extends BaseController {
             return;
         }
 
-        if (D("Page")->where(" cat_id = '$cat_id' ")->find() || D("Catalog")->where(" parent_cat_id = '$cat_id' ")->find()) {
-            $return['error_code'] = -1 ;
-            $return['error_message'] = L('no_delete_empty_catalog') ;
-            $this->sendResult($return);
-            return;
-        }
-
         if ($cat_id > 0 ) {
             
-            $ret = D("Catalog")->where(" cat_id = '$cat_id' ")->delete();
+            $ret = D("Catalog")->deleteCat($cat_id);
 
         }
         if ($ret) {
@@ -210,19 +205,11 @@ class CatalogController extends BaseController {
 
         
         if (!$this->checkItemPermn($login_user['uid'] , $item_id)) {
-            $this->message(L('no_permissions'));
+            $this->sendError(10101,L('no_permissions'));
             return;
         }
 
-        $Catalog = D("Catalog")->where(" cat_id = '$default_cat_id' ")->find();
-        if ($Catalog['parent_cat_id']) {
-            $default_cat_id2 = $Catalog['parent_cat_id'];
-            $default_cat_id3 = $default_cat_id;
-
-        }else{
-            $default_cat_id2 = $default_cat_id;
-        }
-        $this->sendResult(array("default_cat_id2"=>$default_cat_id2 , "default_cat_id3"=>$default_cat_id3));
+        $this->sendResult(array("default_cat_id"=>$default_cat_id ));
     }
 
 

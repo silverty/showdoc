@@ -1,5 +1,5 @@
 <template>
-  <div class="hello">
+  <div class="hello" @keydown.ctrl.83.prevent="save" @keydown.meta.83.prevent="save">
     <Header> </Header>
 
     <el-container class="container-narrow">
@@ -9,16 +9,13 @@
           <el-form-item :label="$t('title')+' : '">
             <el-input  placeholder="" v-model="title"></el-input>
           </el-form-item>
-          <el-form-item :label="$t('level_2_directory')+' : '" >
-            <el-select  :placeholder="$t('optional')" class="cat" v-model="cat_id2" @change="get_cat3">
-              <el-option v-if="cat2" v-for="cat in cat2 " :key="cat.cat_name" :label="cat.cat_name" :value="cat.cat_id"></el-option>
+
+          <el-form-item :label="$t('catalog')+' : '" >
+            <el-select  :placeholder="$t('optional')" class="cat" v-model="cat_id">
+              <el-option v-if="belong_to_catalogs" v-for="cat in belong_to_catalogs " :key="cat.cat_name" :label="cat.cat_name" :value="cat.cat_id"></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item :label="$t('level_3_directory')+' : '" >
-            <el-select  :placeholder="$t('optional')" class="cat" v-model="cat_id3">
-              <el-option v-if="cat3" v-for="cat in cat3 " :label="cat.cat_name" :key="cat.cat_name" :value="cat.cat_id"></el-option>
-            </el-select>
-          </el-form-item>
+
           <el-form-item :label="$t('s_number')+' : '">
             <el-input  :placeholder="$t('optional')" class="num" v-model="s_number"></el-input>
           </el-form-item>
@@ -34,7 +31,7 @@
                   <!-- <el-dropdown-item>保存前添加注释</el-dropdown-item> -->
                 </el-dropdown-menu>
               </el-dropdown>
-            <el-button type="" size="medium" @click="goback">{{$t('cancel')}}</el-button>
+            <el-button type="" size="medium" @click="goback">{{$t('goback')}}</el-button>
           </el-form-item>
         </el-form>
 
@@ -51,6 +48,10 @@
             </el-dropdown>
           <el-button type="" size="medium" @click="ShowRunApi">{{$t('http_test_api')}}</el-button>
 
+          <el-badge :value="attachment_count" class="item">
+            <el-button type="" size="medium" @click="ShowAttachment">{{$t('attachment')}}</el-button>
+          </el-badge>
+
           </el-row>
 
       <Editormd v-bind:content="content" v-if="content" ref="Editormd"  type="editor" ></Editormd>
@@ -62,13 +63,18 @@
         <TemplateList :callback="insertValue" ref="TemplateList"></TemplateList>
 
         <!-- 历史版本 -->
-        <HistoryVersion :callback="insertValue" ref="HistoryVersion"></HistoryVersion>
+        <HistoryVersion :callback="insertValue" :is_show_recover_btn="true"  ref="HistoryVersion"></HistoryVersion>
 
         <!-- Json转表格 组件 -->
         <JsonToTable   :callback="insertValue" ref="JsonToTable" ></JsonToTable>
 
         <!-- Json格式化 -->
         <JsonBeautify :callback="insertValue" ref="JsonBeautify"></JsonBeautify>
+
+
+        <!-- 附件列表 -->
+        <AttachmentList :callback="insertValue" :item_id="item_id" :manage="true" :page_id="page_id" ref="AttachmentList"></AttachmentList>
+
 
       </el-container>
     <Footer> </Footer>
@@ -139,6 +145,75 @@
 
 </div>
 
+<div id="api-doc-templ-en"  ref="api_doc_templ_en" style="display:none">
+    
+**Brief description:** 
+
+- User Registration Interface
+
+
+**Request URL：** 
+- ` http://xx.com/api/user/register `
+  
+**Method:**
+- POST 
+
+**Parameter:** 
+
+|Parameter name|Required|Type|Explain|
+|:----    |:---|:----- |-----   |
+|username |Yes  |string |Your username   |
+|password |Yes  |string | Your password    |
+|name     |No  |string | Your name    |
+
+ **Return example**
+
+``` 
+  {
+    "error_code": 0,
+    "data": {
+      "uid": "1",
+      "username": "12154545",
+      "name": "harry",
+      "groupid": 2 ,
+      "reg_time": "1436864169",
+      "last_login_time": "0",
+    }
+  }
+```
+
+ **Return parameter description** 
+
+|Parameter name|Type|Explain|
+|:-----  |:-----|-----                           |
+|groupid |int   |  .|
+
+ **Remark** 
+
+- For more error code returns, see the error code description on the home page
+
+
+
+</div>
+<div id="database-doc-templ-en" ref="database_doc_templ_en" style="display:none">
+    
+-  User table , to store user information
+
+
+
+|Field|Type|Empty|Default|Explain|
+|:----    |:-------    |:--- |-- -|------      |
+|uid    |int(10)     |No |  |             |
+|username |varchar(20) |No |    |     |
+|password |varchar(50) |No   |    |       |
+|name     |varchar(15) |No   |    |         |
+|reg_time |int(11)     |No   | 0  |    . |
+
+- Remark : no
+
+
+</div>
+
   </div>
 </template>
 
@@ -156,7 +231,7 @@
   }
 
   .cat{
-    width: 130px;
+    width: 200px;
   }
 
   .num{
@@ -176,6 +251,7 @@ import JsonToTable from '@/components/common/JsonToTable'
 import JsonBeautify from '@/components/common/JsonBeautify'
 import TemplateList from '@/components/page/edit/TemplateList'
 import HistoryVersion from '@/components/page/edit/HistoryVersion'
+import AttachmentList from '@/components/page/edit/AttachmentList'
 
 export default {
   data () {
@@ -185,22 +261,59 @@ export default {
       content:"",
       title:"",
       item_id:0,
-      cat2:[],
-      cat_id2:'',
-      cat3:[],
-      cat_id3:'',
+      cat_id:'',
       s_number:'',
       page_id:'',
       copy_page_id:'',
-
+      attachment_count:'',
+      catalogs:[]
     };
+  },
+  computed: {
+
+    //新建/编辑页面时供用户选择的归属目录列表
+    belong_to_catalogs:function(){
+        if (!this.catalogs || this.catalogs.length <=0 ) {
+          return [];
+        };
+        var Info = this.catalogs.slice(0);
+        var cat_array = [] ;
+        for (var i = 0; i < Info.length; i++) {
+          cat_array.push(Info[i]);
+          var sub = Info[i]['sub'] ;
+          if (sub.length > 0 ) {
+            for (var j = 0; j < sub.length; j++) {
+              cat_array.push( {
+                "cat_id":sub[j]['cat_id'] ,
+                "cat_name":Info[i]['cat_name']+' / ' + sub[j]['cat_name']
+              });
+
+              var sub_sub = sub[j]['sub'] ;
+              if (sub_sub.length > 0 ) {
+                for (var k = 0; k < sub_sub.length; k++) {
+                  cat_array.push( {
+                    "cat_id":sub_sub[k]['cat_id'] ,
+                    "cat_name":Info[i]['cat_name']+' / ' + sub[j]['cat_name']+' / ' + sub_sub[k]['cat_name']
+                  });
+                };
+              };
+
+            };
+          };
+        };
+        var no_cat = {"cat_id":'' ,"cat_name":this.$t("none")} ;
+        cat_array.unshift(no_cat);
+        return cat_array;
+
+    }
   },
   components:{
     Editormd,
     JsonToTable,
     JsonBeautify,
     TemplateList,
-    HistoryVersion
+    HistoryVersion,
+    AttachmentList
   },
   methods:{
     //获取页面内容
@@ -217,9 +330,21 @@ export default {
             if (response.data.error_code === 0 ) {
               //that.$message.success("加载成功");
               that.content = response.data.data.page_content ;
+              setTimeout(function(){
+                that.insertValue(that.content ,1) ;
+              },500);
+              setTimeout(function(){
+                //如果长度大于3000,则关闭预览
+                if (that.content.length > 3000) {
+                  that.editor_unwatch();
+                }else{
+                  that.editor_watch();
+                }
+              },1000);
               that.title = response.data.data.page_title ;
               that.item_id = response.data.data.item_id ;
               that.s_number = response.data.data.s_number ;
+              that.attachment_count = response.data.data.attachment_count > 0 ? "..." :'' ;
             }else{
               that.$alert(response.data.error_message);
             }
@@ -230,44 +355,26 @@ export default {
           });
     },
 
-    //获取二级目录
-    get_cat2(item_id){
+    //获取所有目录
+    get_catalog(item_id){
       var that = this ;
-      var url = DocConfig.server+'/api/catalog/secondCatList';
+      var url = DocConfig.server+'/api/catalog/catListGroup';
       var params = new URLSearchParams();
       params.append('item_id',  item_id);
       that.axios.post(url, params)
         .then(function (response) {
           if (response.data.error_code === 0 ) {
-            //that.$message.success("加载成功");
-            that.cat2 = response.data.data ;
+            var Info = response.data.data ;
+
+            that.catalogs =  Info;
             that.get_default_cat();
           }else{
             that.$alert(response.data.error_message);
           }
           
-        });
-    },
-    //获取三级目录
-    get_cat3(cat_id,callback){
-      var that = this ;
-      var url = DocConfig.server+'/api/catalog/childCatList';
-      var params = new URLSearchParams();
-      params.append('cat_id',  cat_id);
-      that.axios.post(url, params)
-        .then(function (response) {
-          if (response.data.error_code === 0 ) {
-            //that.$message.success("加载成功");
-            that.cat_id3 = '';
-            that.cat3 = response.data.data ;
-            if(callback){
-              callback();
-            }
-
-          }else{
-            that.$alert(response.data.error_message);
-          }
-          
+        })
+        .catch(function (error) {
+          console.log(error);
         });
     },
     //获取默认该选中的目录
@@ -276,6 +383,7 @@ export default {
       var url = DocConfig.server+'/api/catalog/getDefaultCat';
       var params = new URLSearchParams();
       params.append('page_id',  this.page_id);
+      params.append('item_id',  that.$route.params.item_id);
       params.append('copy_page_id',  this.copy_page_id);
 
       that.axios.post(url, params)
@@ -283,10 +391,7 @@ export default {
           if (response.data.error_code === 0 ) {
             //that.$message.success("加载成功");
             var json = response.data.data ;
-            that.cat_id2 = json.default_cat_id2 ;
-            that.get_cat3(json.default_cat_id2,function(){
-              that.cat_id3 = json.default_cat_id3 ;
-            }) ;
+            that.cat_id = json.default_cat_id ;
 
           }else{
             that.$alert(response.data.error_message);
@@ -309,14 +414,40 @@ export default {
 
     //插入api模板
     insert_api_template(){
-      this.insertValue(this.$refs.api_doc_templ.innerHTML ) ;
+      if (DocConfig.lang == 'zh-cn') {
+        var val = this.$refs.api_doc_templ.innerHTML ;
+      }else{
+        var val = this.$refs.api_doc_templ_en.innerHTML ;
+      }
+      this.insertValue(val ) ;
     },
 
     //插入数据字典模板
     insert_database_template(){
-      this.insertValue(this.$refs.database_doc_templ.innerHTML ) ;
+      if (DocConfig.lang == 'zh-cn') {
+        var val = this.$refs.database_doc_templ.innerHTML ;
+      }else{
+        var val = this.$refs.database_doc_templ_en.innerHTML ;
+      }
+      this.insertValue(val) ;
     },
+    //关闭预览
+    editor_unwatch(){
+      let childRef = this.$refs.Editormd ;//获取子组件
+      childRef.editor_unwatch();
+      if ( sessionStorage.getItem("page_id_unwatch_"+this.page_id) ) {
 
+      }else{
+        this.$alert(this.$t("long_page_tips"));
+         sessionStorage.setItem("page_id_unwatch_"+this.page_id,1)
+      }
+
+    },
+    //
+    editor_watch(){
+      let childRef = this.$refs.Editormd ;//获取子组件
+      childRef.editor_watch();
+    },
     //json转参数表格
     ShowJsonToTable(){
         let childRef = this.$refs.JsonToTable ;//获取子组件
@@ -348,13 +479,7 @@ export default {
       var loading = that.$loading();
       let childRef = this.$refs.Editormd ;
       var content = childRef.getMarkdown() ;
-      var cat_id = 0 ;
-      if (that.cat_id2 > 0 ) {
-        cat_id = that.cat_id2 ;
-      };     
-      if (that.cat_id3 > 0 ) {
-        cat_id = that.cat_id3 ;
-      };
+      var cat_id = this.cat_id ;
       var item_id = that.$route.params.item_id ;
       var page_id = that.$route.params.page_id ;
       var url = DocConfig.server+'/api/page/save';
@@ -363,15 +488,26 @@ export default {
       params.append('item_id',  item_id);
       params.append('s_number',  that.s_number);
       params.append('page_title',  that.title);
-      params.append('page_content',  content);
+      params.append('page_content',  encodeURIComponent(content));
+      params.append('is_urlencode',  1);
       params.append('cat_id',  cat_id);
       that.axios.post(url, params)
         .then(function (response) {
           loading.close();
           if (response.data.error_code === 0 ) {
-            //that.$message.success("加载成功");
-            localStorage.removeItem("page_content");
-            that.$router.push({path:'/'+item_id,query:{page_id:response.data.data.page_id}}) ; 
+            that.$message({
+              showClose: true,
+              message: that.$t("save_success"),
+              type: 'success'
+            });
+
+            //删除草稿
+            that.deleteDraft();
+
+            if (page_id <= 0 ) {
+              that.$router.push({path:'/page/edit/'+item_id+'/'+response.data.data.page_id}) ;
+              that.page_id = response.data.data.page_id ;
+            };
           }else{
             that.$alert(response.data.error_message);
           }
@@ -413,66 +549,104 @@ export default {
             });
        });
     },
-
+    //附件
+    ShowAttachment(){
+        let childRef = this.$refs.AttachmentList ;//获取子组件
+        childRef.show() ; 
+    },
     /** 粘贴上传图片 **/
-    on_paste(){
+    upload_paste_img(e){
       var that = this;
       var url = DocConfig.server+'/api/page/uploadImg';
-      document.addEventListener('paste', function(e) {
-        var clipboard = e.clipboardData;
-        for (var i = 0, len = clipboard.items.length; i < len; i++) {
-          if (clipboard.items[i].kind == 'file' || clipboard.items[i].type.indexOf('image') > -1) {
-            var imageFile = clipboard.items[i].getAsFile();
-            var form = new FormData;
-            form.append('t', 'ajax-uploadpic');
-            form.append('editormd-image-file', imageFile);
-            var loading = '';
-            var callback = function(type, data) {
-              type = type || 'before';
-              switch (type) {
-                // 开始上传
-                case 'before':
-                  loading = that.$loading();
-                  break;
-                  // 服务器返回错误
-                case 'error':
-                  loading.close();
-                  that.$alert('图片上传失败');
-                  break;
-                  // 上传成功
-                case 'success':
-                  loading.close();
-                  if (data.success == 1) {
-                    var value = '![](' + data.url + ')';
-                    that.insertValue(value);
-                  } else {
-                    that.$alert(data.message);
-                  }
+      var clipboard = e.clipboardData;
+      for (var i = 0, len = clipboard.items.length; i < len; i++) {
+        if (clipboard.items[i].kind == 'file' || clipboard.items[i].type.indexOf('image') > -1) {
+          var imageFile = clipboard.items[i].getAsFile();
+          var form = new FormData;
+          form.append('t', 'ajax-uploadpic');
+          form.append('editormd-image-file', imageFile);
+          var loading = '';
+          var callback = function(type, data) {
+            type = type || 'before';
+            switch (type) {
+              // 开始上传
+              case 'before':
+                loading = that.$loading();
+                break;
+                // 服务器返回错误
+              case 'error':
+                loading.close();
+                that.$alert('图片上传失败');
+                break;
+                // 上传成功
+              case 'success':
+                loading.close();
+                if (data.success == 1) {
+                  var value = '![](' + data.url + ')';
+                  that.insertValue(value);
+                } else {
+                  that.$alert(data.message);
+                }
 
-                  break;
-              }
-            };
-            $.ajax({
-              url: url,
-              type: "POST",
-              dataType: "json",
-              data: form,
-              processData: false,
-              contentType: false,
-              beforeSend: function() {
-                callback('before');
-              },
-              error: function() {
-                callback('error');
-              },
-              success: function(data) {
-                callback('success', data);
-              }
-            })
-            e.preventDefault();
-          }
+                break;
+            }
+          };
+          $.ajax({
+            url: url,
+            type: "POST",
+            dataType: "json",
+            data: form,
+            processData: false,
+            contentType: false,
+            beforeSend: function() {
+              callback('before');
+            },
+            error: function() {
+              callback('error');
+            },
+            success: function(data) {
+              callback('success', data);
+            }
+          })
+          e.preventDefault();
         }
-      });
+      }
+    },
+    //草稿
+    draft(){
+      var that = this ;
+      var pkey = "page_content_"+this.page_id ;
+        //定时保存文本内容到localStorage
+        setInterval(()=>{
+          let childRef = this.$refs.Editormd ;
+          var content = childRef.getMarkdown() ;
+            localStorage.setItem(pkey , content);
+        }, 30*1000);
+
+        //检测是否有定时保存的内容
+        var page_content = localStorage.getItem(pkey);
+        if (page_content && page_content.length > 0) {
+          localStorage.removeItem(pkey);
+          that.$confirm(that.$t('draft_tips'),'',{
+            showClose:false
+          }
+          ).then(()=>{
+              that.insertValue(page_content , true) ;
+              localStorage.removeItem(pkey);
+            }).catch(()=>{
+              localStorage.removeItem(pkey);
+            });
+        };
+    },
+
+    //遍历删除草稿
+    deleteDraft(){
+      for(var i=0; i<localStorage.length;i++){
+          var name = localStorage.key(i) ;
+          if (name.indexOf("page_content_") > -1) {
+            localStorage.removeItem(name)
+          };
+      }
     }
   },
 
@@ -490,18 +664,20 @@ export default {
       this.item_id = this.$route.params.item_id ;
       this.content = this.$t("welcome_use_showdoc") ;
     }
-    this.get_cat2(this.$route.params.item_id);
+    this.get_catalog(this.$route.params.item_id);
     
-    that.on_paste();
+    this.draft();
+
+    /** 监听粘贴上传图片 **/
+    document.addEventListener('paste', this.upload_paste_img);
     
-    document.onkeydown=function(e){  //对整个页面文档监听 其键盘快捷键
-      var keyNum=window.event ? e.keyCode :e.which;  //获取被按下的键值 
-      if (keyNum == 83 && e.ctrlKey) {  //Ctrl +S 为保存
-        that.save();
-        e.preventDefault();
-      };
-    }
     
+  },
+
+  beforeDestroy(){
+    
+    //解除对粘贴上传图片的监听
+    document.removeEventListener('paste', this.upload_paste_img);
   }
 }
 </script>

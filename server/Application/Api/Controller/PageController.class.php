@@ -7,7 +7,7 @@ class PageController extends BaseController {
     public function info(){
         $page_id = I("page_id/d");
         $page = D("Page")->where(" page_id = '$page_id' ")->find();
-        if (!$page) {
+        if (!$page  || $page['is_del'] == 1) {
             sleep(1);
             $this->sendError(10101);
             return false;
@@ -21,6 +21,16 @@ class PageController extends BaseController {
         if ($page) {
            //unset($page['page_content']);
            $page['addtime'] = date("Y-m-d H:i:s",$page['addtime']);
+           //判断是否包含附件信息
+           $page['attachment_count'] = D("UploadFile")->where("page_id = '$page_id' ")->count();
+
+           $singlePage = M("SinglePage")->where(" page_id = '%d' ",array($page_id))->limit(1)->find();
+           if ($singlePage) {
+                $page['unique_key'] =  $singlePage['unique_key'] ;
+           }else{
+                $page['unique_key'] = '' ;
+           }
+
         }
         $this->sendResult($page);
     }
@@ -37,7 +47,7 @@ class PageController extends BaseController {
 
         if ($page) {
             
-            $ret = D("Page")->where(" page_id = '$page_id' ")->delete();
+            $ret = D("Page")->softDeletePage($page_id);
             //更新项目时间
             D("Item")->where(" item_id = '$page[item_id]' ")->save(array("last_update_time"=>time()));
 
@@ -53,6 +63,7 @@ class PageController extends BaseController {
     public function save(){
         $login_user = $this->checkLogin();
         $page_id = I("page_id/d") ? I("page_id/d") : 0 ;
+        $is_urlencode = I("is_urlencode/d") ? I("is_urlencode/d") : 0 ; //页面内容是否经过了转义
         $page_title = I("page_title") ?I("page_title") : L("default_title");
         $page_comments = I("page_comments") ?I("page_comments") :'';
         $page_content = I("page_content");
@@ -65,7 +76,13 @@ class PageController extends BaseController {
             $this->sendError(10103);
             return;
         }
-
+        if (!$page_content) {
+            $this->sendError(10103,"不允许保存空内容，请随便写点什么");
+            return;
+        }
+        if ($is_urlencode) {
+            $page_content = urldecode($page_content);
+        }
         $data['page_title'] = $page_title ;
         $data['page_content'] = $page_content ;
         $data['page_comments'] = $page_comments ;
@@ -80,6 +97,10 @@ class PageController extends BaseController {
             
             //在保存前先把当前页面的版本存档
             $page = D("Page")->where(" page_id = '$page_id' ")->find();
+            if (!$this->checkItemPermn($login_user['uid'] , $page['item_id'])) {
+                $this->sendError(10103);
+                return;
+            }
             $insert_history = array(
                 'page_id'=>$page['page_id'],
                 'item_id'=>$page['item_id'],
@@ -208,12 +229,12 @@ class PageController extends BaseController {
           $Upload = new \Think\Upload(C('UPLOAD_SITEIMG_QINIU'));
           $info = $Upload->upload($_FILES);
           $url = $info['editormd-image-file']['url'] ;
-          if ($ret) {
+          if ($url) {
               echo json_encode(array("url"=>$url,"success"=>1));
           }
         }else{
             $upload = new \Think\Upload();// 实例化上传类
-            $upload->maxSize  = 3145728 ;// 设置附件上传大小
+            $upload->maxSize  = 1003145728 ;// 设置附件上传大小
             $upload->allowExts  = array('jpg', 'gif', 'png', 'jpeg');// 设置附件上传类型
             $upload->rootPath = './../Public/Uploads/';// 设置附件上传目录
             $upload->savePath = '';// 设置附件上传子目录
@@ -228,5 +249,161 @@ class PageController extends BaseController {
         }
 
     }
+
+    //上传附件
+    public function upload(){
+        $login_user = $this->checkLogin();
+        $item_id = I("item_id/d") ? I("item_id/d") : 0 ;
+        $page_id = I("page_id/d") ? I("page_id/d") : 0 ;
+        $uploadFile = $_FILES['file'] ;
+ 
+        if (!$page_id) {
+            $this->sendError(10103,"请至少先保存一次页面内容");
+            return;
+        }
+        if (!$this->checkItemPermn($login_user['uid'] , $item_id)) {
+            $this->sendError(10103);
+            return;
+        }
+
+        if (strstr(strtolower($uploadFile['name']), ".php") ) {
+            return false;
+        }
+
+        $upload = new \Think\Upload();// 实例化上传类
+        $upload->maxSize  = 4145728000 ;// 设置附件上传大小
+        $upload->rootPath = './../Public/Uploads/';// 设置附件上传目录
+        $upload->savePath = '';// 设置附件上传子目录
+        $info = $upload->upload() ;
+        if(!$info) {// 上传错误提示错误信息
+          $this->error($upload->getError());
+          return;
+        }else{// 上传成功 获取上传文件信息
+          $url = get_domain().__ROOT__.substr($upload->rootPath,1).$info['file']['savepath'].$info['file']['savename'] ;
+          $insert = array(
+            "uid" => $login_user['uid'],
+            "item_id" => $item_id,
+            "page_id" => $page_id,
+            "display_name" => $uploadFile['name'],
+            "file_type" => $uploadFile['type'],
+            "file_size" => $uploadFile['size'],
+            "real_url" => $url,
+            "addtime" => time(),
+            );
+          $ret = D("UploadFile")->add($insert);
+
+          echo json_encode(array("url"=>$url,"success"=>1));
+        }
+
+    }
+
+    public function uploadList(){
+        $login_user = $this->checkLogin();
+        $item_id = I("item_id/d") ? I("item_id/d") : 0 ;
+        $page_id = I("page_id/d") ? I("page_id/d") : 0 ;
+        if (!$page_id) {
+            $this->sendError(10103,"请至少先保存一次页面内容");
+            return;
+        }
+        $return = array() ;
+        $files = D("UploadFile")->where("page_id = '$page_id' ")->order("addtime desc")->select();
+        if ($files) {
+            $item_id = $files[0]['item_id'] ;
+            if (!$this->checkItemVisit($login_user['uid'] , $item_id)) {
+                $this->sendError(10103);
+                return;
+            }
+            foreach ($files as $key => $value) {
+                $return[] = array(
+                    "file_id"=>$value['file_id'],
+                    "display_name"=>$value['display_name'],
+                    "url"=>$value['real_url'],
+                    "addtime"=> date("Y-m-d H:i:s" , $value['addtime'] ),
+                    );
+            }
+
+        }
+        $this->sendResult($return);
+
+    }
+
+    //删除已上传文件
+    public function deleteUploadFile(){
+        $login_user = $this->checkLogin();
+        $file_id = I("file_id/d") ? I("file_id/d") : 0 ;
+
+        $file = D("UploadFile")->where("file_id = '$file_id' ")->find();
+        $item_id = $file['item_id'] ;
+        if (!$this->checkItemPermn($login_user['uid'] , $item_id)) {
+            $this->sendError(10103);
+            return;
+        }
+        $ret = D("Page")->deleteFile($file_id);
+        if ($ret) {
+            $this->sendResult(array());
+        }else{
+            $this->sendError(10101,"删除失败");
+        }
+    }
+
+
+    //创建单页
+    public function createSinglePage(){
+        $page_id = I("page_id/d");
+        $isCreateSiglePage = I("isCreateSiglePage");
+        $page = M("Page")->where(" page_id = '$page_id' ")->find();
+        if (!$page || $page['is_del'] == 1) {
+            sleep(1);
+            $this->sendError(10101);
+            return false;
+        }
+        $login_user = $this->checkLogin(false);
+        if (!$this->checkItemPermn($login_user['uid'] , $page['item_id'])) {
+            $this->sendError(10103);
+            return;
+        }
+        D("SinglePage")->where(" page_id = '$page_id' ")->delete();
+        $unique_key = md5(time().rand()."gbgdhbdgtfgfK3@bv45342regdhbdgtfgftghsdg");
+        $add = array(
+            "unique_key" => $unique_key ,
+            "page_id" => $page_id ,
+            );
+        if ($isCreateSiglePage == 'true') { //这里的布尔值被转成字符串了
+           D("SinglePage")->add($add);
+           $this->sendResult($add);
+        }else{
+            $this->sendResult(array());
+        }
+        
+    }
+
+    //页面详情
+    public function infoByKey(){
+        $unique_key = I("unique_key");
+        if (!$unique_key) {
+            return false;
+        }
+        $singlePage = M("SinglePage")->where(" unique_key = '%s' ",array($unique_key))->find();
+        $page_id = $singlePage['page_id'];
+
+        $page = M("Page")->where(" page_id = '$page_id' ")->find();
+        if (!$page || $page['is_del'] == 1) {
+            sleep(1);
+            $this->sendError(10101);
+            return false;
+        }
+        $login_user = $this->checkLogin(false);
+        $page = $page ? $page : array();
+        if ($page) {
+           unset($page['item_id']);
+           unset($page['cat_id']);
+           $page['addtime'] = date("Y-m-d H:i:s",$page['addtime']);
+           //判断是否包含附件信息
+           $page['attachment_count'] = D("UploadFile")->where("page_id = '$page_id' ")->count();
+
+        }
+        $this->sendResult($page);
+    }
+
 
 }

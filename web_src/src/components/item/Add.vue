@@ -9,7 +9,7 @@
               <el-form-item label="" >
               <el-radio v-model="item_type" label="1">{{$t('item_type1')}}</el-radio>
               <el-radio v-model="item_type" label="2">{{$t('item_type2')}}</el-radio>
-              &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://www.showdoc.cc/page/65391" target="_blank"><i class="el-icon-question"></i></a>
+              &nbsp;&nbsp;&nbsp;&nbsp;<a v-if="lang =='zh-cn'" href="https://www.showdoc.cc/page/65391" target="_blank"><i class="el-icon-question"></i></a>
               </el-form-item>
 
 
@@ -23,7 +23,12 @@
 
 
               <el-form-item label="" >
-                <el-input type="password" auto-complete="off" v-model="password"  :placeholder="$t('visit_password_placeholder')"></el-input>
+                <el-radio v-model="isOpenItem" :label="true">{{$t('Open_item')}}</el-radio>
+                <el-radio v-model="isOpenItem" :label="false">{{$t('private_item')}}</el-radio>
+              </el-form-item>
+
+              <el-form-item label="" v-show="!isOpenItem" >
+                  <el-input type="password" auto-complete="off" v-model="password"  :placeholder="$t('visit_password_placeholder')"></el-input>
               </el-form-item>
 
               <el-form-item label="" class="text-left">
@@ -37,6 +42,11 @@
                     </el-option>
                   </el-select>
 
+              </el-form-item>
+              
+              <el-form-item v-if="lang =='zh-cn'" label="" style="text-align: left;margin-bottom:5px;margin-left:15px;margin-top:-25px;">
+                  <el-button type="text" @click="auto_doc">我要自动生成文档</el-button>
+                  &nbsp;&nbsp;&nbsp;
               </el-form-item>
 
                <el-form-item label="" >
@@ -72,7 +82,9 @@ export default {
       password: '',
       show_copy:false,
       itemList:{},
-      copy_item_id:""
+      copy_item_id:"",
+      lang:'',
+      isOpenItem:true,
 
     }
 
@@ -107,7 +119,13 @@ export default {
     onSubmit() {
         var that = this ;
         var url = DocConfig.server+'/api/item/add';
-
+        if (!this.isOpenItem && !this.password) {
+          that.$alert(that.$t("private_item_passwrod"));
+          return false;
+        };
+        if (this.isOpenItem) {
+          this.password = '';
+        }; 
         var params = new URLSearchParams();
         params.append('item_type', this.item_type);
         params.append('item_name', this.item_name);
@@ -125,9 +143,19 @@ export default {
             }
             
           });
-      },
+    },
+    auto_doc(){
+      var msg = '<p>如果你想自动化生成API文档，则可参考<a target="_bank" href="https://www.showdoc.cc/page/741656402509783">API文档</a></p>';
+      msg += '<p>如果你想自动化生成数据字典，则可参考<a target="_bank" href="https://www.showdoc.cc/page/312209902620725">数据字典</a></p>';
+      msg += '<p>如果你更自由地生成自己所需要的格式，则可参考<a target="_bank" href="https://www.showdoc.cc/page/102098">开放API</a></p>';
+      this.$alert(msg, {
+          dangerouslyUseHTMLString: true
+        });
+    }
+    
   },
   mounted() {
+    this.lang = DocConfig.lang ;
     this.get_item_list();
     /*给body添加类，设置背景色*/
     document.getElementsByTagName("body")[0].className="grey-bg";

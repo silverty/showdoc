@@ -18,6 +18,7 @@
 
             <div class="header-right">
               <!-- 登录的事情下 -->
+               <router-link v-if="item_info.is_login" to="/item/index" >{{$t('goback')}} </router-link>
               <el-dropdown @command="dropdown_callback" v-if="item_info.is_login">
                 <span class="el-dropdown-link">
                   {{$t('item')}}<i class="el-icon-arrow-down el-icon--right"></i>
@@ -26,7 +27,6 @@
                   <el-dropdown-item :command="share_item">{{$t('share')}}</el-dropdown-item>
                   <router-link :to="'/item/export/'+item_info.item_id" v-if="item_info.ItemPermn"><el-dropdown-item>{{$t('export')}}</el-dropdown-item></router-link>
                   <router-link :to="'/item/setting/'+item_info.item_id"  v-if="item_info.ItemCreator"><el-dropdown-item>{{$t('item_setting')}}</el-dropdown-item></router-link>
-                  <router-link to="/item/index"><el-dropdown-item >{{$t('goback')}}</el-dropdown-item></router-link>
                 </el-dropdown-menu>
               </el-dropdown>
 
@@ -47,6 +47,9 @@
              <div class="doc-title-box"  v-if="page_id">
                 <span id="doc-title-span" class="dn"></span>
                 <h2 id="doc-title">{{page_title}}</h2>
+                <el-badge :value="attachment_count" class="item"  id="attachment" v-if="attachment_count"   @click.native="ShowAttachment" >
+                  <i class="el-icon-upload"></i> 
+                </el-badge>
             </div>
               <Editormd v-bind:content="content" type="html"  v-if="page_id" ></Editormd>
 
@@ -56,27 +59,34 @@
         </el-container>
 
         <div class="page-bar" v-show="show_page_bar && item_info.ItemPermn && item_info.is_archived < 1 " >
-          <PageBar v-if="page_id" :page_id="page_id" :item_id='item_info.item_id' :page_info="page_info"></PageBar>
+          <PageBar v-if="page_id" :page_id="page_id" :item_id='item_info.item_id' :item_info='item_info'  :page_info="page_info"></PageBar>
         </div>
         
       </el-container>
 
       <BackToTop  > </BackToTop>
+      <Toc  v-if="page_id" > </Toc>
 
   <el-dialog
     title="分享项目"
     :visible.sync="dialogVisible"
-    width="400px"
+    width="600px"
     :modal="false"
     class="text-center"
     >
     
     <p>项目地址：<code >{{share_item_link}}</code></p>
+    <p><a href="javascript:;" class="home-phone-butt" v-clipboard:copyhttplist="copyText" v-clipboard:success="onCopy">{{$t('copy_link')}}</a></p>
         <p style="border-bottom: 1px solid #eee;"><img id="" style="width:114px;height:114px;" :src="qr_item_link"> </p>
     <span slot="footer" class="dialog-footer">
       <el-button type="primary" @click="dialogVisible = false">{{$t('confirm')}}</el-button>
     </span>
   </el-dialog>
+
+    <!-- 附件列表 -->
+    <AttachmentList callback="" :item_id="page_info.item_id" :manage="false" :page_id="page_info.page_id" ref="AttachmentList"></AttachmentList>
+
+
 
     <Footer> </Footer>
     
@@ -88,8 +98,12 @@
 <script>
   import Editormd from '@/components/common/Editormd'
   import BackToTop from '@/components/common/BackToTop'
+  import Toc from '@/components/common/Toc'
   import LeftMenu from '@/components/item/show/show_regular_item/LeftMenu'
   import PageBar from '@/components/item/show/show_regular_item/PageBar'
+  import AttachmentList from '@/components/page/edit/AttachmentList'
+
+
   export default {
     props:{
       item_info:'',
@@ -104,14 +118,18 @@
         share_item_link:'',
         qr_item_link:'',
         page_info:'',
-        show_page_bar:true
+        show_page_bar:true,
+        copyText:"",
+        attachment_count:'',
       }
     },
   components:{
     Editormd,
     LeftMenu,
     PageBar,
-    BackToTop
+    BackToTop,
+    Toc,
+    AttachmentList
   },
   methods:{
     //获取页面内容
@@ -136,6 +154,7 @@
               
               that.page_title = response.data.data.page_title ;
               that.page_info = response.data.data ;
+              that.attachment_count = response.data.data.attachment_count > 0 ?  response.data.data.attachment_count  :'' ;
               //切换变量让它重新加载、渲染子组件
               that.page_id = 0 ;
               that.$nextTick(() => {
@@ -157,6 +176,7 @@
       this.share_item_link =  this.getRootPath()+"#/"+this.item_info.item_id  ;
       this.qr_item_link = DocConfig.server +'/api/common/qrcode&size=3&url='+encodeURIComponent(this.share_item_link);
       this.dialogVisible = true;
+      this.copyText = this.item_info.item_name+"  -- ShowDoc \r\n"+ this.share_item_link;
     },
     //根据屏幕宽度进行响应(应对移动设备的访问)
     AdaptToMobile(){
@@ -189,7 +209,15 @@
 
       }
 
-    }
+    },
+    onCopy(){
+      this.$message(this.$t("copy_success"));
+    },
+    ShowAttachment(){
+        let childRef = this.$refs.AttachmentList ;//获取子组件
+        childRef.show() ; 
+    },
+    
   },
   mounted () {
     //根据屏幕宽度进行响应(应对移动设备的访问)
@@ -234,6 +262,7 @@
     width:800px;
     margin: 0 auto ;
     height: 50%;
+    overflow: visible;
   }
 
   .right-side{
@@ -262,6 +291,15 @@
     margin-top: 5px;
     margin-left: -15px;
     cursor: pointer;
+    position: fixed;
   }
-
+  #attachment{
+    float: right;
+    font-size: 25px;
+    margin-top: -40px;
+    margin-right: 5px;
+    cursor:pointer;
+    color: #abd1f1;
+  }
+  
 </style>

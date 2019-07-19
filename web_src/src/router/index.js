@@ -9,15 +9,18 @@ import ResetPasswordByUrl from '@/components/user/ResetPasswordByUrl'
 import ItemIndex from '@/components/item/Index'
 import ItemAdd from '@/components/item/Add'
 import ItemPassword from '@/components/item/Password'
-import ItemShow from '@/components/item/show/index'
-import ItemExport from '@/components/item/export/index'
+import ItemShow from '@/components/item/show/Index'
+import ItemExport from '@/components/item/export/Index'
 import ItemSetting from '@/components/item/setting/Index'
 import PageIndex from '@/components/page/Index'
 import PageEdit from '@/components/page/edit/Index'
 import PageDiff from '@/components/page/Diff'
 import Catalog from '@/components/catalog/Index'
 import Notice from '@/components/notice/Index'
-
+import Admin from '@/components/admin/Index'
+import Team from '@/components/Team/Index'
+import TeamMember from '@/components/Team/Member'
+import TeamItem from '@/components/Team/Item'
 
 Vue.use(Router)
 
@@ -89,6 +92,11 @@ export default new Router({
       component: PageIndex
     },
     {
+      path: '/p/:unique_key',
+      name: 'PageIndex',
+      component: PageIndex
+    },
+    {
       path: '/page/edit/:item_id/:page_id',
       name: 'PageEdit',
       component: PageEdit
@@ -107,6 +115,26 @@ export default new Router({
       path: '/notice/index',
       name: 'Notice',
       component: Notice
+    },
+    {
+      path: '/admin/index',
+      name: 'Admin',
+      component: Admin
+    },
+    {
+      path: '/team/index',
+      name: 'Team',
+      component: Team
+    }, 
+    {
+      path: '/team/member/:team_id',
+      name: 'TeamMember',
+      component: TeamMember
+    },
+    {
+      path: '/team/item/:team_id',
+      name: 'TeamItem',
+      component: TeamItem
     },
   ]
 })
